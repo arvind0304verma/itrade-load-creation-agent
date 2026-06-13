@@ -289,8 +289,7 @@ public class LoadPayloadMapper {
             waypoint.pickUpNumber = pickupNumber;
             waypoint.poNumber = firstNonBlank(omsrPoNumbers, firstValidPoNumber(stopPoNumber, config.getDefaultPickupPoNumber()));
         } else {
-            String dateTime = dropoffDateTime(capturedOrder, stop, stopZone);
-            waypoint.earliestDropoffDateTime = dateTime;
+            waypoint.earliestDropoffDateTime = dropoffDateTime(capturedOrder, stop, stopZone);
             waypoint.dropOffNumber = firstNonBlank(config.getDefaultDropoffNumber(), stopDropoffNumber);
             waypoint.poNumber = firstNonBlank(omsrPoNumbers, firstValidPoNumber(stopPoNumber, config.getDefaultDropoffPoNumber()));
         }

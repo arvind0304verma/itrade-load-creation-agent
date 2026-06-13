@@ -376,23 +376,23 @@ class OmsrPlaywrightLoadScraperTest {
     }
 
     @Test
-    void isOpenLoadStatusRequiresExactOpenStatus() throws Exception {
+    void isConfirmedLoadStatusRequiresExactConfirmedStatus() throws Exception {
         OmsrPlaywrightLoadScraper scraper = new OmsrPlaywrightLoadScraper(new OmsrBrowserConfig());
         Method method = OmsrPlaywrightLoadScraper.class.getDeclaredMethod(
-                "isOpenLoadStatus",
+                "isConfirmedLoadStatus",
                 CapturedOrdersPayload.CapturedOrder.class
         );
         method.setAccessible(true);
 
-        CapturedOrdersPayload.CapturedOrder open = new CapturedOrdersPayload.CapturedOrder();
-        open.status = " Open ";
-        CapturedOrdersPayload.CapturedOrder bracketedOpen = new CapturedOrdersPayload.CapturedOrder();
-        bracketedOpen.status = "[Open -- S]";
+        CapturedOrdersPayload.CapturedOrder confirmed = new CapturedOrdersPayload.CapturedOrder();
+        confirmed.status = " Confirmed ";
+        CapturedOrdersPayload.CapturedOrder bracketedConfirmed = new CapturedOrdersPayload.CapturedOrder();
+        bracketedConfirmed.status = "[Confirmed -- S]";
         CapturedOrdersPayload.CapturedOrder closed = new CapturedOrdersPayload.CapturedOrder();
         closed.status = "Closed";
 
-        assertTrue((Boolean) method.invoke(scraper, open));
-        assertTrue((Boolean) method.invoke(scraper, bracketedOpen));
+        assertTrue((Boolean) method.invoke(scraper, confirmed));
+        assertTrue((Boolean) method.invoke(scraper, bracketedConfirmed));
         assertFalse((Boolean) method.invoke(scraper, closed));
     }
 

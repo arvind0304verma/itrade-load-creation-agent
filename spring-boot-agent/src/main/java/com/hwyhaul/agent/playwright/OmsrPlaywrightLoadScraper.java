@@ -639,12 +639,12 @@ public class OmsrPlaywrightLoadScraper {
             throw new IllegalStateException("OMSR orders page redirected back to login. The session was not authenticated.");
         }
         Frame ordersFrame = resolveOrdersFrame(page);
-        ordersFrame = applyOpenOrderStatusFilter(page, ordersFrame);
+        ordersFrame = applyConfirmedOrderStatusFilter(page, ordersFrame);
         waitForOptionalRows(ordersFrame);
         return ordersFrame;
     }
 
-    private Frame applyOpenOrderStatusFilter(Page page, Frame ordersFrame) {
+    private Frame applyConfirmedOrderStatusFilter(Page page, Frame ordersFrame) {
         String beforeSignature = orderListSignature(ordersFrame);
         Page filterPage = openOrderStatusFilterWindow(page, ordersFrame);
         try {
@@ -652,25 +652,25 @@ public class OmsrPlaywrightLoadScraper {
             filterPage.setDefaultNavigationTimeout(DEFAULT_TIMEOUT_MS);
             filterPage.waitForLoadState();
 
-            if (!selectOpenOrderStatusOption(filterPage)) {
-                captureDebugSnapshot(filterPage, "omsr-open-status-filter-option-not-found");
-                throw new IllegalStateException("Unable to select Open from the OMSR Order Status filter window.");
+            if (!selectConfirmedOrderStatusOption(filterPage)) {
+                captureDebugSnapshot(filterPage, "omsr-confirmed-status-filter-option-not-found");
+                throw new IllegalStateException("Unable to select Confirmed from the OMSR Order Status filter window.");
             }
 
             sleep(100);
             if (!isPageClosed(filterPage) && !submitOmsrFilterWindow(filterPage)) {
-                captureDebugSnapshot(filterPage, "omsr-open-status-filter-submit-not-found");
-                throw new IllegalStateException("Unable to apply the OMSR Order Status Open filter.");
+                captureDebugSnapshot(filterPage, "omsr-confirmed-status-filter-submit-not-found");
+                throw new IllegalStateException("Unable to apply the OMSR Order Status Confirmed filter.");
             }
 
             Frame filteredFrame = waitForOrdersFrameAfterFilter(page, beforeSignature);
             if (!isPageClosed(filterPage)) {
                 log.debug("OMSR Order Status filter window remained open after submit; closing it after parent order list became ready.");
             }
-            log.debug("Applied OMSR Order Status Open filter before collecting load rows.");
+            log.debug("Applied OMSR Order Status Confirmed filter before collecting load rows.");
             return filteredFrame;
         } catch (PlaywrightException e) {
-            captureDebugSnapshot(page, "omsr-open-status-filter-failed");
+            captureDebugSnapshot(page, "omsr-confirmed-status-filter-failed");
             throw e;
         } finally {
             if (!isPageClosed(filterPage)) {
@@ -789,7 +789,7 @@ public class OmsrPlaywrightLoadScraper {
                 .toLowerCase(Locale.ROOT);
     }
 
-    private boolean selectOpenOrderStatusOption(Page filterPage) {
+    private boolean selectConfirmedOrderStatusOption(Page filterPage) {
         Object value = evaluateFilterPopupUntilValue(filterPage, """
                 () => {
                   const normalize = value => String(value || "").replace(/\\u00a0/g, " ").replace(/\\s+/g, " ").trim();
@@ -805,13 +805,13 @@ public class OmsrPlaywrightLoadScraper {
                       && style.visibility !== "hidden"
                       && (rect.width > 0 || rect.height > 0 || element.options?.length > 0);
                   };
-                  const optionMatchesOpen = option => {
+                  const optionMatchesConfirmed = option => {
                     const text = key(option.textContent);
                     const value = key(option.value);
                     const strippedText = text.replace(/^[-|\\s]+|[-|\\s]+$/g, "");
-                    return text === "open"
-                      || value === "open"
-                      || strippedText === "open";
+                    return text === "confirmed"
+                      || value === "confirmed"
+                      || strippedText === "confirmed";
                   };
                   const nearbyText = select => {
                     const parts = [];
@@ -828,8 +828,8 @@ public class OmsrPlaywrightLoadScraper {
                   };
                   const candidates = Array.from(document.querySelectorAll("select"))
                     .map(select => {
-                      const openOption = Array.from(select.options || []).find(optionMatchesOpen);
-                      if (!openOption) return null;
+                      const confirmedOption = Array.from(select.options || []).find(optionMatchesConfirmed);
+                      if (!confirmedOption) return null;
 
                       const identity = key([
                         select.name,
@@ -844,7 +844,7 @@ public class OmsrPlaywrightLoadScraper {
                       if (/order\\s*status/.test(nearby)) score += 60;
                       if (nearby.includes("status")) score += 20;
                       if (visible(select)) score += 5;
-                      return { select, openOption, score, identity, nearby };
+                      return { select, confirmedOption, score, identity, nearby };
                     })
                     .filter(Boolean)
                     .sort((left, right) => right.score - left.score);
@@ -855,11 +855,11 @@ public class OmsrPlaywrightLoadScraper {
 
                   if (best.select.multiple) {
                     Array.from(best.select.options || []).forEach(option => {
-                      option.selected = option === best.openOption;
+                      option.selected = option === best.confirmedOption;
                     });
                   } else {
-                    best.select.value = best.openOption.value;
-                    best.openOption.selected = true;
+                    best.select.value = best.confirmedOption.value;
+                    best.confirmedOption.selected = true;
                   }
 
                   best.select.dispatchEvent(new Event("input", { bubbles: true }));
@@ -875,7 +875,7 @@ public class OmsrPlaywrightLoadScraper {
                     }
                   }
 
-                  return `${best.select.name || best.select.id || "select"}=${normalize(best.openOption.textContent || best.openOption.value)}`;
+                  return `${best.select.name || best.select.id || "select"}=${normalize(best.confirmedOption.textContent || best.confirmedOption.value)}`;
                 }
                 """, false);
         boolean selected = value != null && !value.toString().isBlank();
@@ -1003,8 +1003,8 @@ public class OmsrPlaywrightLoadScraper {
             sleep(100);
         }
 
-        captureDebugSnapshot(page, "omsr-open-status-filter-timeout");
-        throw new IllegalStateException("Timed out waiting for OMSR order list after applying the Open status filter.");
+        captureDebugSnapshot(page, "omsr-confirmed-status-filter-timeout");
+        throw new IllegalStateException("Timed out waiting for OMSR order list after applying the Confirmed status filter.");
     }
 
     private boolean isPageClosed(Page page) {
@@ -3087,12 +3087,12 @@ public class OmsrPlaywrightLoadScraper {
         return limit > 0 && collectedCount >= limit;
     }
 
-    private boolean isOpenLoadStatus(CapturedOrdersPayload.CapturedOrder load) {
+    private boolean isConfirmedLoadStatus(CapturedOrdersPayload.CapturedOrder load) {
         if (load == null || load.status == null || load.status.isBlank()) {
             return false;
         }
         String normalized = normalizeKey(load.status);
-        return normalized.equals("open") || normalized.startsWith("open");
+        return normalized.equals("confirmed") || normalized.startsWith("confirmed");
     }
 
     private Frame clickNextOrdersPage(Frame frame) {
