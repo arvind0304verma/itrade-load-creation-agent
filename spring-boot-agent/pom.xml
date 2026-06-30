@@ -47,4 +47,15 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <finalName>spring-boot-agent</finalName>
+        <plugins>
+            <!-- Repackages the jar as an executable Spring Boot fat jar (java -jar). -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
 </project>

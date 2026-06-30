@@ -1,0 +1,22 @@
+# Keep the Docker build context small. The build compiles from source inside the
+# image (see -devops/Dockerfile), so only the module sources/POMs are needed.
+
+# Bundled dev tooling committed to the repo (Maven distro, local MongoDB binaries)
+tools/
+
+# Build output (recompiled inside the image)
+**/target/
+
+# Local/IDE/VCS noise
+.git/
+.gitignore
+.idea/
+*.iml
+.vscode/
+
+# Docs and local dev helpers
+docs/
+*.md
+
+# Local config overrides must never leak into the image
+**/application-local.properties
