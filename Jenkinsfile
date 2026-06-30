@@ -17,7 +17,7 @@ pipeline {
     environment {
         PRODUCT    = 'itrade-load-creation-agent'
         REGISTRY   = 'gcr.io/hwyhaul-backend'
-        DOCKERFILE = './-devops/Dockerfile'
+        DOCKERFILE = './devops/Dockerfile'
     }
 
     options {

@@ -11,7 +11,7 @@
 # all its system dependencies are present (both modules use Playwright 1.44.0).
 #
 # Build context MUST be the repository root (see .dockerignore), e.g.:
-#   docker build -f ./-devops/Dockerfile -t <image>:<tag> .
+#   docker build -f ./devops/Dockerfile -t <image>:<tag> .
 
 # ---------- build stage ----------
 FROM maven:3.9-eclipse-temurin-21 AS build

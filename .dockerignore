@@ -1,5 +1,5 @@
 # Keep the Docker build context small. The build compiles from source inside the
-# image (see -devops/Dockerfile), so only the module sources/POMs are needed.
+# image (see devops/Dockerfile), so only the module sources/POMs are needed.
 
 # Bundled dev tooling committed to the repo (Maven distro, local MongoDB binaries)
 tools/
