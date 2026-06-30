@@ -1,12 +1,15 @@
 package com.hwyhaul.agent.mapper;
 
 import com.hwyhaul.agent.config.AgentLoadConfig;
+import com.hwyhaul.agent.loadapi.AddressLookupClient;
 import com.hwyhaul.agent.model.CapturedOrdersPayload;
 import com.hwyhaul.agent.model.CreateLoadPayload;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.DateTimeException;
+import java.util.Optional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -60,9 +63,16 @@ public class LoadPayloadMapper {
     );
 
     private final AgentLoadConfig config;
+    private final AddressLookupClient addressLookupClient;
 
     public LoadPayloadMapper(AgentLoadConfig config) {
+        this(config, null);
+    }
+
+    @Autowired
+    public LoadPayloadMapper(AgentLoadConfig config, AddressLookupClient addressLookupClient) {
         this.config = config;
+        this.addressLookupClient = addressLookupClient;
     }
 
     public CreateLoadPayload map(CapturedOrdersPayload capturedPayload) {
@@ -382,7 +392,7 @@ public class LoadPayloadMapper {
         address.operationType = firstNonBlank(defaults.getOperationType(), "NOT_SET_UP");
         address.status = blankToNull(defaults.getStatus());
         address.tenantAddressType = firstNonBlank(defaults.getTenantAddressType(), "COMPANY");
-        address.id = pickup ? pickupAddressId() : dropoffAddressId();
+        address.id = resolveAddressId(stop, pickup, companyId);
         address.valid = false;
         address.line1 = blankToNull(defaults.getLine1());
         address.line2 = firstNonBlank(defaults.getLine2(), defaults.getAddressLine2(), resolvedStreetAddress);
@@ -933,6 +943,17 @@ public class LoadPayloadMapper {
         } catch (DateTimeException e) {
             return DEFAULT_ZONE;
         }
+    }
+
+    private String resolveAddressId(CapturedOrdersPayload.Stop stop, boolean pickup, String companyId) {
+        if (addressLookupClient != null && stop != null && !isBlank(stop.streetAddress)) {
+            Optional<String> lookedUp = addressLookupClient.lookupAddressId(
+                    companyId, stop.streetAddress, stop.city, stop.state, stop.zip);
+            if (lookedUp.isPresent()) {
+                return lookedUp.get();
+            }
+        }
+        return pickup ? pickupAddressId() : dropoffAddressId();
     }
 
     private String pickupAddressId() {
