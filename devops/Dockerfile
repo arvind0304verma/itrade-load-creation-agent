@@ -15,6 +15,15 @@
 
 # ---------- build stage ----------
 FROM maven:3.9-eclipse-temurin-21 AS build
+
+# Re-declare the JDK env explicitly. The base image already sets these, but the
+# old Docker Engine on the Jenkins build host does not propagate a pulled image's
+# ENV into RUN steps, so JAVA_HOME arrives empty and the JDK is off PATH — mvn
+# then aborts with "JAVA_HOME environment variable is not defined correctly".
+# Setting JAVA_HOME here makes mvn use $JAVA_HOME/bin/java directly.
+ENV JAVA_HOME=/opt/java/openjdk
+ENV PATH="/opt/java/openjdk/bin:/usr/share/maven/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
 WORKDIR /workspace
 
 # Copy POMs first so dependency resolution can be cached independently of source changes.
