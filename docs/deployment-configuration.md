@@ -72,7 +72,7 @@ Examples:
 | `server.port` | `8080` (Spring default) | honor Cloud Run `PORT` (`8080`) | |
 | `agent.omsr.headless` | `true` | `true` | No display in container. |
 | `agent.omsr.debug-directory` | `target/playwright-debug/omsr` | `/tmp/playwright-debug/omsr` | Use a writable path. |
-| `mcp.jar-path` | `../java-mcp-server/target/java-mcp-server-0.0.1-SNAPSHOT.jar` | absolute in-image path, e.g. `/app/java-mcp-server.jar` | MCP jar launched as subprocess. |
+| `mcp.jar-path` | `../java-mcp-server/target/java-mcp-server-0.0.1-SNAPSHOT-exec.jar` | absolute in-image path, e.g. `/app/java-mcp-server.jar` | MCP jar launched as subprocess. |
 | `llm.enabled` | `false` | as needed | If `true`, requires `openai.api-key`. |
 | `logging.level.com.hwyhaul.agent` | `DEBUG` | `INFO` | Reduce log volume in prod. |
 

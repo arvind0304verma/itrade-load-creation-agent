@@ -14,12 +14,6 @@ pipeline {
             booleanParam(name: 'lock', defaultValue: false, description: 'Lock New Functionality Branch')
     }
 
-    environment {
-        PRODUCT    = 'itrade-load-creation-agent'
-        REGISTRY   = 'gcr.io/hwyhaul-backend'
-        DOCKERFILE = './devops/Dockerfile'
-    }
-
     options {
         disableConcurrentBuilds()
     }
@@ -39,21 +33,22 @@ pipeline {
             }
             steps {
                 script {
+                    env.JAVA_HOME = "/usr/lib/jvm/jdk-20/"
                     shortCommit = sh(returnStdout: true, script: "git log -n 1 --pretty=format:'%h'").trim()
+                    product = "itrade-load-creation-agent"
                     if (BRANCH_NAME.contains('release')) {
                         TAG = BRANCH_NAME.split('-')[1] + "_" + "${shortCommit}"
                     } else {
                         TAG = "${shortCommit}"
                     }
-                    env.IMAGE = "${REGISTRY}/${PRODUCT}:${TAG}"
-
-                    // Checking if we need to build an image. It could already exist.
-                    env.IF_IMAGE_EXISTS = sh(returnStdout: true, script: "gcloud container images list-tags ${REGISTRY}/${PRODUCT} --filter=${TAG} --format=json").trim()
+//                  Checking if we need to build an image. It could already exist.
+                    env.IF_IMAGE_EXISTS = sh(returnStdout: true, script: "gcloud container images list-tags gcr.io/hwyhaul-backend/${product} --filter=${TAG} --format=json").trim()
 
                     if (env.IF_IMAGE_EXISTS == "[]"){
                         BUILD_NEED = true
                     } else {
                         BUILD_NEED = false
+                        
                     }
                 }
             }
@@ -70,25 +65,11 @@ pipeline {
             }
         }
 
-        stage('Build & push docker image'){
-            when {
-                allOf {
-                    expression { "${NAMESPACE}" != "" };
-                    anyOf {
-                        expression { BUILD_NEED == true };
-                    }
-                }
-            }
+        stage('Build itrade-load-creation-agent'){
             steps {
                 script {
                     try {
-                        // The Dockerfile is multi-stage: it compiles both Maven modules
-                        // (java-mcp-server + spring-boot-agent) and produces the runtime image.
-                        // Build context is the repo root so both modules are visible; .dockerignore
-                        // keeps the context small.
-                        sh "gcloud auth configure-docker --quiet"
-                        sh "docker build -f ${DOCKERFILE} -t ${env.IMAGE} ."
-                        sh "docker push ${env.IMAGE}"
+                        javaBuild.build "${product}"
                         bitbucketStatusNotify(
                             buildState: 'SUCCESSFUL'
                         )
@@ -99,7 +80,26 @@ pipeline {
                         currentBuild.result = 'FAILURE'
                         error('Aborting the build.')
                         throw e
+                        return
                     }
+                }
+            }
+        }
+
+        stage('Build docker image'){
+            when {
+                allOf {
+                    expression { "${NAMESPACE}" != "" };
+                    anyOf {
+                        expression { BUILD_NEED == true};
+                    }
+                }
+            }
+            steps {
+                script {
+                    sh "ls -la"
+                    sh "ls -la ./itrade-load-creation-agent-infrastructure/target/"
+                    dockerBuild.image "${product}", "${TAG}"
                 }
             }
         }
@@ -117,8 +117,8 @@ pipeline {
                     }
                 }
                 script {
-                    sh "kubectl apply -f infra/helm/microservice/values/${PRODUCT}/${NAMESPACE}-secret.yaml"
-                    helmDeploy.helmDeploy "${NAMESPACE}", "${TAG}", "${PRODUCT}"
+                    sh "kubectl apply -f infra/helm/microservice/values/${product}/${NAMESPACE}-secret.yaml"
+                    helmDeploy.helmDeploy "${NAMESPACE}", "${TAG}", "${product}"
                 }
             }
         }
