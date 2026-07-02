@@ -7,7 +7,7 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class McpProcessConfig {
 
-    @Value("${mcp.jar-path:../java-mcp-server/target/java-mcp-server-0.0.1-SNAPSHOT.jar}")
+    @Value("${mcp.jar-path:../java-mcp-server/target/java-mcp-server-0.0.1-SNAPSHOT-exec.jar}")
     private String jarPath;
 
     private final AgentBrowserConfig browserConfig;

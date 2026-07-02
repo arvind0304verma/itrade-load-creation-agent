@@ -639,17 +639,17 @@ class OmsrPlaywrightLoadScraperTest {
     }
 
     @Test
-    void selectOpenOrderStatusOptionRetriesWhenPopupNavigates() throws Exception {
+    void selectConfirmedOrderStatusOptionRetriesWhenPopupNavigates() throws Exception {
         OmsrPlaywrightLoadScraper scraper = new OmsrPlaywrightLoadScraper(new OmsrBrowserConfig());
         Page filterPage = mock(Page.class);
 
         when(filterPage.isClosed()).thenReturn(false);
         when(filterPage.evaluate(anyString()))
                 .thenThrow(new PlaywrightException("Execution context was destroyed, most likely because of a navigation"))
-                .thenReturn("orderStatus=Open");
+                .thenReturn("orderStatus=Confirmed");
 
         Method method = OmsrPlaywrightLoadScraper.class.getDeclaredMethod(
-                "selectOpenOrderStatusOption",
+                "selectConfirmedOrderStatusOption",
                 Page.class
         );
         method.setAccessible(true);
@@ -676,7 +676,7 @@ class OmsrPlaywrightLoadScraperTest {
     }
 
     @Test
-    void applyOpenOrderStatusFilterContinuesWhenPopupStaysOpenAfterSubmit() throws Exception {
+    void applyConfirmedOrderStatusFilterContinuesWhenPopupStaysOpenAfterSubmit() throws Exception {
         OmsrBrowserConfig config = new OmsrBrowserConfig();
         OmsrPlaywrightLoadScraper scraper = new OmsrPlaywrightLoadScraper(config);
         Page page = mock(Page.class);
@@ -701,7 +701,7 @@ class OmsrPlaywrightLoadScraperTest {
             return filterPage;
         });
         when(filterPage.isClosed()).thenReturn(false);
-        when(filterPage.evaluate(anyString())).thenReturn("orderStatus=Open", "submit");
+        when(filterPage.evaluate(anyString())).thenReturn("orderStatus=Confirmed", "submit");
 
         when(page.frames()).thenReturn(List.of(filteredFrame));
         when(filteredFrame.parentFrame()).thenReturn(parentFrame);
@@ -715,7 +715,7 @@ class OmsrPlaywrightLoadScraperTest {
         when(detailLinks.count()).thenReturn(1);
 
         Method method = OmsrPlaywrightLoadScraper.class.getDeclaredMethod(
-                "applyOpenOrderStatusFilter",
+                "applyConfirmedOrderStatusFilter",
                 Page.class,
                 Frame.class
         );
