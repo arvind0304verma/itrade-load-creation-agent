@@ -25,6 +25,15 @@ public class PlaywrightOrderScraper {
     private static final double DEFAULT_TIMEOUT_MS = 60_000;
     private static final double ROW_WAIT_TIMEOUT_MS = 10_000;
     private static final int MAX_LOADS_FROM_FIRST_SCREEN = 10;
+
+    // Login form selectors. The email field is matched against a few common
+    // variants (not just input[type='email']) so a minor markup change on the
+    // auth page does not silently time out; the first DOM match is used.
+    private static final String EMAIL_SELECTOR =
+            "input[type='email'], input[name='email'], input[id='email'], input[name='username'], input[name='userName']";
+    private static final String PASSWORD_SELECTOR =
+            "input[type='password'], input[name='password'], input[id='password']";
+    private static final String SUBMIT_SELECTOR = "button[type='submit']";
     private final AgentBrowserConfig browserConfig;
     private String xHhToken;
 
@@ -113,9 +122,19 @@ public class PlaywrightOrderScraper {
 
     private void authenticate(Page page, BrowserContext context) {
         page.navigate(browserConfig.getAuthUrl());
-        page.locator("input[type='email']").fill(browserConfig.getUsername());
-        page.locator("input[type='password']").fill(browserConfig.getPassword());
-        page.locator("button[type='submit']").click();
+        try {
+            page.locator(EMAIL_SELECTOR).first().fill(browserConfig.getUsername());
+            page.locator(PASSWORD_SELECTOR).first().fill(browserConfig.getPassword());
+            page.locator(SUBMIT_SELECTOR).first().click();
+        } catch (PlaywrightException e) {
+            captureDebugSnapshot(page, "auth-login-form-not-found");
+            log.error("HwyHaul login form interaction failed. authUrl={}, landedUrl={}, title='{}'. "
+                            + "The login field was not found within the timeout. Inspect "
+                            + "target/playwright-debug/auth-login-form-not-found.(png|html|txt) to see the actual page "
+                            + "(possible redirect/SSO, iframe, or changed selectors).",
+                    browserConfig.getAuthUrl(), safeUrl(page), safeTitle(page), e);
+            throw e;
+        }
         waitForAuthenticatedPage(page);
 
         String authenticationState = collectAuthenticationState(context, page, "spring-auth-state");
@@ -524,6 +543,22 @@ public class PlaywrightOrderScraper {
                             + "missingSelector=" + browserConfig.getOrderRowSelector() + System.lineSeparator());
         } catch (Exception ignored) {
             // Debug artifacts are best-effort; scraping should not fail because diagnostics failed.
+        }
+    }
+
+    private String safeUrl(Page page) {
+        try {
+            return page.url();
+        } catch (Exception e) {
+            return "<unavailable>";
+        }
+    }
+
+    private String safeTitle(Page page) {
+        try {
+            return page.title();
+        } catch (Exception e) {
+            return "<unavailable>";
         }
     }
 
