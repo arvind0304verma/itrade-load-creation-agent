@@ -46,4 +46,29 @@
         </dependencies>
     </dependencyManagement>
 
+    <build>
+        <plugins>
+            <!-- Repackage into an executable fat jar with the "exec" classifier so the
+                 plain jar remains usable as a library dependency (the infrastructure
+                 module depends on this artifact) while itrade-load-creation-agent-mcp-server_*-exec.jar
+                 is launched via `java -jar` by McpProcessConfig. -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>repackage</id>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>exec</classifier>
+                            <mainClass>com.hwyhaul.mcp.McpServer</mainClass>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
 </project>
