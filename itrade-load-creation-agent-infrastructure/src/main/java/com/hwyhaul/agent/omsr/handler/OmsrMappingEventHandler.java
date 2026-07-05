@@ -47,6 +47,11 @@ public class OmsrMappingEventHandler {
                 return;
             }
 
+            // The HwyHaul login (and x-hh-token) is only obtained later, in the Load API stage. Pass any
+            // token already carried on the captured payload so address lookups can run; when absent the
+            // mapper falls back to the configured default address ids.
+            String hwyHaulToken = event.capturedPayload() == null ? null : event.capturedPayload().xHhToken;
+
             List<OmsrMappedLoad> mappedLoads = new ArrayList<>(capturedLoads.size());
             for (CapturedOrdersPayload.CapturedOrder capturedLoad : capturedLoads) {
                 if (capturedLoad == null
@@ -54,7 +59,7 @@ public class OmsrMappingEventHandler {
                         || capturedLoad.externalOrderId.isBlank()) {
                     continue;
                 }
-                CreateLoadPayload payload = loadPayloadMapper.mapSingle(capturedLoad);
+                CreateLoadPayload payload = loadPayloadMapper.mapSingle(capturedLoad, hwyHaulToken);
                 mappedLoads.add(new OmsrMappedLoad(capturedLoad.externalOrderId, payload));
             }
 

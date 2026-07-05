@@ -33,7 +33,7 @@ public class AgentLoadConfig {
     private Currency currency = new Currency();
     private CreditRecipient creditRecipient = new CreditRecipient();
     private Company company = new Company();
-    private String shipperId = "b0595ecc-1fb6-11ef-b506-42010af7212e";
+    private String shipperId = "7775aa16-293d-4808-80d3-16165df601e8";
     private String commodityId = "95288fd1-3dba-11ef-b506-42010af72332";
     private List<Commodity> commodities = defaultCommodities();
     private Address address = new Address();

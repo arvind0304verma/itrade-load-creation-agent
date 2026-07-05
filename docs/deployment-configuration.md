@@ -152,7 +152,7 @@ customer/agent/environment as needed. Most are stable business defaults.
 | `agent.load.credit-recipient.user-id` | `90ddef76-5889-11ef-b506-42010af72332` |
 | `agent.load.credit-recipient.commission-plan-id` | `d2aef315-5889-11ef-b506-42010af72332` |
 | `agent.load.company.id` | `b3b74b30-5cfc-4301-bfe3-c7c5655c658b` |
-| `agent.load.shipper-id` | `b0595ecc-1fb6-11eb-9ebb-42010af7212e` |
+| `agent.load.shipper-id` | `7775aa16-293d-4808-80d3-16165df601e8` |
 | `agent.load.commodity-id` | `95288fd1-3dba-11ef-b506-42010af72332` |
 | `agent.load.commodities[0..3].{id,group,name}` | Produce: Bell Peppers, Tomatoes, Mini Peppers, Cucumbers |
 | `agent.load.address.id.pickup` | `b6a663d3-569c-4a14-bd87-eb3973029112` |

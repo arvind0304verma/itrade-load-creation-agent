@@ -44,6 +44,9 @@ public class OmsrPlaywrightLoadScraper {
     private static final ObjectMapper mapper = new ObjectMapper();
 
     private static final double DEFAULT_TIMEOUT_MS = 60_000;
+    // Pagination "Next" clicks should fail fast when a matched link is not actionable
+    // (e.g. a disabled last-page control) instead of blocking for the full default timeout.
+    private static final double PAGINATION_CLICK_TIMEOUT_MS = 15_000;
     private static final double ROW_WAIT_TIMEOUT_MS = 15_000;
     private static final double ADDRESS_POPUP_TIMEOUT_MS = 4_000;
     private static final double FILTER_POPUP_TIMEOUT_MS = 15_000;
@@ -3097,7 +3100,8 @@ public class OmsrPlaywrightLoadScraper {
 
     private Frame clickNextOrdersPage(Frame frame) {
         Locator nextLink = nextOrdersPageLink(frame);
-        if (nextLink == null) {
+        if (nextLink == null || !isPaginationLinkClickable(nextLink)) {
+            // No enabled/actionable "Next" link means we have reached the last order-list page.
             return null;
         }
 
@@ -3106,7 +3110,7 @@ public class OmsrPlaywrightLoadScraper {
         PlaywrightException lastError = null;
         for (int attempt = 1; attempt <= 3; attempt++) {
             try {
-                nextLink.click(new Locator.ClickOptions().setTimeout(DEFAULT_TIMEOUT_MS));
+                nextLink.click(new Locator.ClickOptions().setTimeout(PAGINATION_CLICK_TIMEOUT_MS));
                 return waitForOrdersPageChange(page, beforeSignature);
             } catch (PlaywrightException e) {
                 if (!isTransientNavigationError(e)) {
@@ -3115,7 +3119,7 @@ public class OmsrPlaywrightLoadScraper {
                 lastError = e;
                 frame = resolveOrdersFrame(page);
                 nextLink = nextOrdersPageLink(frame);
-                if (nextLink == null) {
+                if (nextLink == null || !isPaginationLinkClickable(nextLink)) {
                     return null;
                 }
             }
@@ -3169,6 +3173,57 @@ public class OmsrPlaywrightLoadScraper {
         return disabled != null
                 || "true".equalsIgnoreCase(ariaDisabled)
                 || (combined != null && combined.contains("disabled"));
+    }
+
+    /**
+     * Determines whether a matched pagination "Next" link is actually actionable.
+     * OMSR marks the last-page Next control as disabled on the anchor <em>or an
+     * ancestor</em> (class {@code disabled}, {@code aria-disabled}, or
+     * {@code pointer-events:none}), which {@link #isDisabledOrderPaginationLink}
+     * cannot see from the anchor's own attributes alone. Clicking such a link would
+     * block until the Playwright timeout, so we detect it up front and treat it as
+     * "no next page".
+     */
+    private boolean isPaginationLinkClickable(Locator link) {
+        if (link == null) {
+            return false;
+        }
+        try {
+            Object actionable = link.evaluate("""
+                    el => {
+                      if (!el) return false;
+                      const disabledMarker = node =>
+                          node.hasAttribute('disabled')
+                          || node.getAttribute('aria-disabled') === 'true'
+                          || (typeof node.className === 'string'
+                              && node.className.toLowerCase().includes('disabled'));
+                      let node = el;
+                      for (let i = 0; i < 5 && node; i++) {
+                        if (disabledMarker(node)) return false;
+                        node = node.parentElement;
+                      }
+                      const style = window.getComputedStyle(el);
+                      if (style.pointerEvents === 'none'
+                          || style.display === 'none'
+                          || style.visibility === 'hidden') {
+                        return false;
+                      }
+                      const rect = el.getBoundingClientRect();
+                      return rect.width > 0 && rect.height > 0;
+                    }
+                    """);
+            return Boolean.TRUE.equals(actionable);
+        } catch (PlaywrightException e) {
+            if (isTransientNavigationError(e)) {
+                // Let the click/retry loop handle transient navigation churn.
+                return true;
+            }
+            try {
+                return link.isVisible() && link.isEnabled();
+            } catch (PlaywrightException ignored) {
+                return false;
+            }
+        }
     }
 
     private Frame waitForOrdersPageChange(Page page, String beforeSignature) {
