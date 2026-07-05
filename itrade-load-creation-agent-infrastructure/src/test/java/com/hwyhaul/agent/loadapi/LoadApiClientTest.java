@@ -32,12 +32,23 @@ class LoadApiClientTest {
         CreateLoadPayload payload = mapper.mapSingle(order);
         payload.orders.get(0).shipperId = null;
 
+        LoadLookupClient loadLookupClient = new LoadLookupClient(
+                RestClient.builder(),
+                new ObjectMapper(),
+                "",
+                "api-key",
+                1_000,
+                1_000
+        );
+
         LoadApiClient client = new LoadApiClient(
                 RestClient.builder(),
                 new ObjectMapper(),
+                loadLookupClient,
                 "https://example.invalid/loads",
                 "api-key",
                 true,
+                false,
                 1_000,
                 1_000
         );

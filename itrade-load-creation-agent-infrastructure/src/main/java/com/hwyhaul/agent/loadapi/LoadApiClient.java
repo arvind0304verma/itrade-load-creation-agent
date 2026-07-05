@@ -24,16 +24,20 @@ public class LoadApiClient {
 
     private final RestClient restClient;
     private final ObjectMapper mapper;
+    private final LoadLookupClient loadLookupClient;
     private final String createLoadUrl;
     private final String apiKey;
     private final boolean enabled;
+    private final boolean skipIfExists;
 
     public LoadApiClient(
             RestClient.Builder restClientBuilder,
             ObjectMapper mapper,
+            LoadLookupClient loadLookupClient,
             @Value("${load.api.create-url:}") String createLoadUrl,
             @Value("${load.api.x-api-key:4206d6c3-16bf-444b-9e5f-36775f91c29c}") String apiKey,
             @Value("${load.api.enabled:false}") boolean enabled,
+            @Value("${load.api.skip-if-exists:true}") boolean skipIfExists,
             @Value("${load.api.connect-timeout-ms:10000}") long connectTimeoutMs,
             @Value("${load.api.read-timeout-ms:60000}") long readTimeoutMs
     ) {
@@ -45,9 +49,11 @@ public class LoadApiClient {
                 .requestFactory(requestFactory)
                 .build();
         this.mapper = mapper;
+        this.loadLookupClient = loadLookupClient;
         this.createLoadUrl = createLoadUrl;
         this.apiKey = apiKey;
         this.enabled = enabled;
+        this.skipIfExists = skipIfExists;
     }
 
     public String createLoads(CreateLoadPayload payload, String hwyHaulToken) throws Exception {
@@ -71,6 +77,12 @@ public class LoadApiClient {
 
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("LOAD API POST failed before request. Missing load.api.x-api-key.");
+        }
+
+        String alreadyCreated = existingLoadSummary(payload, hwyHaulToken);
+        if (alreadyCreated != null) {
+            log.info(alreadyCreated);
+            return alreadyCreated;
         }
 
         List<String> missingIds = missingIdFields(payload);
@@ -129,6 +141,35 @@ public class LoadApiClient {
 
     private long elapsedMillis(long startedAt) {
         return Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
+    }
+
+    /**
+     * Checks each order in the payload against HwyHaul's
+     * lookup-by-customer-load-number endpoint. Returns a skip message when any
+     * order already has a load in HwyHaul, otherwise {@code null} so creation
+     * proceeds. When the feature is disabled via {@code load.api.skip-if-exists},
+     * always returns {@code null}.
+     */
+    private String existingLoadSummary(CreateLoadPayload payload, String hwyHaulToken) {
+        if (!skipIfExists || payload == null || payload.orders == null || payload.orders.isEmpty()) {
+            return null;
+        }
+
+        List<String> alreadyCreated = new ArrayList<>();
+        for (CreateLoadPayload.Order order : payload.orders) {
+            if (order == null || order.company == null) {
+                continue;
+            }
+            String companyId = order.company.id;
+            String customerLoadNumber = order.customerLoadNumber;
+            loadLookupClient.findExistingLoad(companyId, customerLoadNumber, hwyHaulToken)
+                    .ifPresent(existingId -> alreadyCreated.add(customerLoadNumber + " (existing load " + existingId + ")"));
+        }
+
+        if (alreadyCreated.isEmpty()) {
+            return null;
+        }
+        return "LOAD API POST skipped. Load already exists in HwyHaul for customerLoadNumber(s): " + alreadyCreated + ".";
     }
 
     private List<String> missingIdFields(CreateLoadPayload payload) {
