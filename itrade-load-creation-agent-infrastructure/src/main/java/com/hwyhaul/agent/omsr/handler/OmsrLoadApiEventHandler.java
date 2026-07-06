@@ -78,8 +78,13 @@ public class OmsrLoadApiEventHandler {
             }
 
             flowCoordinator.update(event.runId(), context -> context.state = AgentState.CALL_LOAD_API);
-            String hwyHaulToken = hwyHaulAuthClient.loginAndGetToken();
-            flowCoordinator.update(event.runId(), context -> context.hwyHaulToken = hwyHaulToken);
+            String hwyHaulToken = snapshot.hwyHaulToken;
+            if (hwyHaulToken == null || hwyHaulToken.isBlank()) {
+                // No token captured during mapping (login deferred or failed) - authenticate now.
+                hwyHaulToken = hwyHaulAuthClient.loginAndGetToken();
+                String capturedToken = hwyHaulToken;
+                flowCoordinator.update(event.runId(), context -> context.hwyHaulToken = capturedToken);
+            }
 
             List<String> responses = callLoadApis(
                     event.runId(),

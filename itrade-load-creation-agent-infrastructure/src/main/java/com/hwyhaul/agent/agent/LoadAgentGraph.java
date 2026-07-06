@@ -62,7 +62,7 @@ public class LoadAgentGraph {
             if (capturedOrder == null || capturedOrder.externalOrderId == null || capturedOrder.externalOrderId.isBlank()) {
                 continue;
             }
-            CreateLoadPayload payload = loadPayloadMapper.mapSingle(capturedOrder);
+            CreateLoadPayload payload = loadPayloadMapper.mapSingle(capturedOrder, ctx.hwyHaulToken);
             payloads.add(payload);
 
             ctx.state = AgentState.CALL_LOAD_API;

@@ -76,6 +76,10 @@ public class LoadPayloadMapper {
     }
 
     public CreateLoadPayload map(CapturedOrdersPayload capturedPayload) {
+        return map(capturedPayload, capturedPayload == null ? null : capturedPayload.xHhToken);
+    }
+
+    public CreateLoadPayload map(CapturedOrdersPayload capturedPayload, String hwyHaulToken) {
         validateRequiredIds(capturedPayload == null ? null : capturedPayload.loads);
 
         CreateLoadPayload payload = newPayload();
@@ -86,16 +90,20 @@ public class LoadPayloadMapper {
         }
 
         payload.orders = capturedPayload.loads.stream()
-                .map(this::mapOrder)
+                .map(capturedOrder -> mapOrder(capturedOrder, hwyHaulToken))
                 .toList();
         return payload;
     }
 
     public CreateLoadPayload mapSingle(CapturedOrdersPayload.CapturedOrder capturedOrder) {
+        return mapSingle(capturedOrder, null);
+    }
+
+    public CreateLoadPayload mapSingle(CapturedOrdersPayload.CapturedOrder capturedOrder, String hwyHaulToken) {
         validateRequiredIds(capturedOrder == null ? null : List.of(capturedOrder));
 
         CreateLoadPayload payload = newPayload();
-        payload.orders = capturedOrder == null ? List.of() : List.of(mapOrder(capturedOrder));
+        payload.orders = capturedOrder == null ? List.of() : List.of(mapOrder(capturedOrder, hwyHaulToken));
         return payload;
     }
 
@@ -114,7 +122,7 @@ public class LoadPayloadMapper {
         return payload;
     }
 
-    private CreateLoadPayload.Order mapOrder(CapturedOrdersPayload.CapturedOrder capturedOrder) {
+    private CreateLoadPayload.Order mapOrder(CapturedOrdersPayload.CapturedOrder capturedOrder, String hwyHaulToken) {
         String companyId = resolveCompanyId();
         CreateLoadPayload.Order order = new CreateLoadPayload.Order();
         order.charges = List.of(mapCharge(capturedOrder));
@@ -124,7 +132,7 @@ public class LoadPayloadMapper {
         order.company = mapCompany(companyId);
         order.customerLoadNumber = firstNonBlank(capturedOrder == null ? null : capturedOrder.externalOrderId, defaultSourceOrderId());
         order.pricingType = firstNonBlank(config.getPricingType(), "SPOT");
-        order.waypoints = mapWaypoints(capturedOrder, companyId);
+        order.waypoints = mapWaypoints(capturedOrder, companyId, hwyHaulToken);
         order.supplementData = mapOrderSupplementData(capturedOrder);
         return order;
     }
@@ -189,17 +197,17 @@ public class LoadPayloadMapper {
         }
     }
 
-    private CreateLoadPayload.Waypoint mapPickup(CapturedOrdersPayload.CapturedOrder capturedOrder, String companyId) {
-        return mapWaypoint(capturedOrder, capturedOrder.pickup, 1, "PICK", true, companyId);
+    private CreateLoadPayload.Waypoint mapPickup(CapturedOrdersPayload.CapturedOrder capturedOrder, String companyId, String hwyHaulToken) {
+        return mapWaypoint(capturedOrder, capturedOrder.pickup, 1, "PICK", true, companyId, hwyHaulToken);
     }
 
-    private CreateLoadPayload.Waypoint mapDropoff(CapturedOrdersPayload.CapturedOrder capturedOrder, String companyId) {
-        return mapWaypoint(capturedOrder, capturedOrder.dropoff, 2, "DROP", false, companyId);
+    private CreateLoadPayload.Waypoint mapDropoff(CapturedOrdersPayload.CapturedOrder capturedOrder, String companyId, String hwyHaulToken) {
+        return mapWaypoint(capturedOrder, capturedOrder.dropoff, 2, "DROP", false, companyId, hwyHaulToken);
     }
 
-    private List<CreateLoadPayload.Waypoint> mapWaypoints(CapturedOrdersPayload.CapturedOrder capturedOrder, String companyId) {
+    private List<CreateLoadPayload.Waypoint> mapWaypoints(CapturedOrdersPayload.CapturedOrder capturedOrder, String companyId, String hwyHaulToken) {
         if (capturedOrder == null || capturedOrder.routeStops == null || capturedOrder.routeStops.size() < 2) {
-            return List.of(mapPickup(capturedOrder, companyId), mapDropoff(capturedOrder, companyId));
+            return List.of(mapPickup(capturedOrder, companyId, hwyHaulToken), mapDropoff(capturedOrder, companyId, hwyHaulToken));
         }
 
         List<CapturedOrdersPayload.RouteStop> routeStops = capturedOrder.routeStops.stream()
@@ -210,12 +218,12 @@ public class LoadPayloadMapper {
                 .toList();
 
         if (routeStops.size() < 2) {
-            return List.of(mapPickup(capturedOrder, companyId), mapDropoff(capturedOrder, companyId));
+            return List.of(mapPickup(capturedOrder, companyId, hwyHaulToken), mapDropoff(capturedOrder, companyId, hwyHaulToken));
         }
 
         List<CreateLoadPayload.Waypoint> waypoints = new ArrayList<>(routeStops.size());
         for (int index = 0; index < routeStops.size(); index++) {
-            waypoints.add(mapRouteWaypoint(capturedOrder, routeStops.get(index), index, companyId));
+            waypoints.add(mapRouteWaypoint(capturedOrder, routeStops.get(index), index, companyId, hwyHaulToken));
         }
         return waypoints;
     }
@@ -224,7 +232,8 @@ public class LoadPayloadMapper {
             CapturedOrdersPayload.CapturedOrder capturedOrder,
             CapturedOrdersPayload.RouteStop routeStop,
             int index,
-            String companyId
+            String companyId,
+            String hwyHaulToken
     ) {
         boolean pickup = isPickupSequence(routeStop.sequenceType);
         boolean dropoff = isDropoffSequence(routeStop.sequenceType);
@@ -235,7 +244,7 @@ public class LoadPayloadMapper {
 
         String sequenceType = normalizeSequenceType(routeStop.sequenceType, pickup, dropoff);
         int sequenceNumber = routeStop.orderSequenceNumber == null ? index + 1 : routeStop.orderSequenceNumber;
-        return mapWaypoint(capturedOrder, routeStop, sequenceNumber, sequenceType, pickup, companyId);
+        return mapWaypoint(capturedOrder, routeStop, sequenceNumber, sequenceType, pickup, companyId, hwyHaulToken);
     }
 
     private CreateLoadPayload.Waypoint mapWaypoint(
@@ -244,14 +253,15 @@ public class LoadPayloadMapper {
             int sequenceNumber,
             String sequenceType,
             boolean pickup,
-            String companyId
+            String companyId,
+            String hwyHaulToken
     ) {
         CreateLoadPayload.Waypoint waypoint = new CreateLoadPayload.Waypoint();
         CapturedOrdersPayload.RouteStop routeStop = stop instanceof CapturedOrdersPayload.RouteStop
                 ? (CapturedOrdersPayload.RouteStop) stop
                 : null;
         ZoneId stopZone = timezoneForStop(pickup, routeStop == null ? null : routeStop.timezone);
-        waypoint.addressDTO = mapAddress(stop, pickup, companyId);
+        waypoint.addressDTO = mapAddress(stop, pickup, companyId, hwyHaulToken);
         if (waypoint.addressDTO != null) {
             waypoint.addressDTO.timezone = stopZone.getId();
             waypoint.lat = waypoint.addressDTO.lat;
@@ -369,7 +379,7 @@ public class LoadPayloadMapper {
         return commodity;
     }
 
-    private CreateLoadPayload.AddressDTO mapAddress(CapturedOrdersPayload.Stop stop, boolean pickup, String companyId) {
+    private CreateLoadPayload.AddressDTO mapAddress(CapturedOrdersPayload.Stop stop, boolean pickup, String companyId, String hwyHaulToken) {
         AgentLoadConfig.StopDefaults defaults = addressDefaults(pickup);
         String city = firstNonBlank(defaults.getCity(), stop == null ? null : stop.city);
         String state = firstNonBlank(defaults.getState(), stop == null ? null : stop.state);
@@ -392,7 +402,7 @@ public class LoadPayloadMapper {
         address.operationType = firstNonBlank(defaults.getOperationType(), "NOT_SET_UP");
         address.status = blankToNull(defaults.getStatus());
         address.tenantAddressType = firstNonBlank(defaults.getTenantAddressType(), "COMPANY");
-        address.id = resolveAddressId(stop, pickup, companyId);
+        address.id = resolveAddressId(stop, pickup, companyId, hwyHaulToken);
         address.valid = false;
         address.line1 = blankToNull(defaults.getLine1());
         address.line2 = firstNonBlank(defaults.getLine2(), defaults.getAddressLine2(), resolvedStreetAddress);
@@ -945,10 +955,10 @@ public class LoadPayloadMapper {
         }
     }
 
-    private String resolveAddressId(CapturedOrdersPayload.Stop stop, boolean pickup, String companyId) {
+    private String resolveAddressId(CapturedOrdersPayload.Stop stop, boolean pickup, String companyId, String hwyHaulToken) {
         if (addressLookupClient != null && stop != null && !isBlank(stop.streetAddress)) {
             Optional<String> lookedUp = addressLookupClient.lookupAddressId(
-                    companyId, stop.streetAddress, stop.city, stop.state, stop.zip);
+                    companyId, hwyHaulToken, stop.streetAddress, stop.city, stop.state, stop.zip);
             if (lookedUp.isPresent()) {
                 return lookedUp.get();
             }
