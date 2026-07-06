@@ -23,7 +23,7 @@ import java.util.List;
 /**
  * Records the final state of each load pipeline run in the intake MongoDB
  * {@code pipeline_runs} collection. Each document is keyed by
- * {@code customerLoadNumber} and transitions PROCESSING -&gt; COMPLETED/FAILED.
+ * {@code loadNumber} and transitions PROCESSING -&gt; COMPLETED/FAILED.
  *
  * <p>All writes are best-effort: a MongoDB failure is logged and swallowed so it never
  * breaks the load-creation flow.
@@ -76,7 +76,7 @@ public class PipelineRunStore {
         List<Bson> updates = new ArrayList<>();
         updates.add(Updates.setOnInsert("usecase", properties.getUsecase()));
         updates.add(Updates.setOnInsert("tenantId", emptyToNull(properties.getTenantId())));
-        updates.add(Updates.setOnInsert("customerLoadNumber", customerLoadNumber));
+        updates.add(Updates.setOnInsert("loadNumber", customerLoadNumber));
         updates.add(Updates.setOnInsert("createdAt", now));
         updates.add(Updates.set("status", status));
         updates.add(Updates.set("updatedAt", now));
@@ -91,7 +91,7 @@ public class PipelineRunStore {
 
         try {
             collection().updateOne(
-                    Filters.eq("customerLoadNumber", customerLoadNumber),
+                    Filters.eq("loadNumber", customerLoadNumber),
                     Updates.combine(updates),
                     new UpdateOptions().upsert(true)
             );
