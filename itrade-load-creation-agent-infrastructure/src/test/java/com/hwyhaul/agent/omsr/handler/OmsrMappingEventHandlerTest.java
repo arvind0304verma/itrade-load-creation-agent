@@ -7,6 +7,7 @@ import com.hwyhaul.agent.mapper.LoadPayloadMapper;
 import com.hwyhaul.agent.model.CapturedOrdersPayload;
 import com.hwyhaul.agent.omsr.OmsrLoadEvents;
 import com.hwyhaul.agent.omsr.OmsrLoadFlowCoordinator;
+import com.hwyhaul.agent.playwright.PlaywrightOrderScraper;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEvent;
 import org.springframework.context.ApplicationEventPublisher;
@@ -16,6 +17,8 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class OmsrMappingEventHandlerTest {
 
@@ -26,10 +29,13 @@ class OmsrMappingEventHandlerTest {
         String runId = coordinator.startFlow().runId();
         publisher.events.clear();
 
+        PlaywrightOrderScraper hwyHaulAuthClient = mock(PlaywrightOrderScraper.class);
+        when(hwyHaulAuthClient.loginAndGetToken()).thenReturn("test-hh-token");
         OmsrMappingEventHandler handler = new OmsrMappingEventHandler(
                 coordinator,
                 publisher,
-                new LoadPayloadMapper(loadConfig())
+                new LoadPayloadMapper(loadConfig()),
+                hwyHaulAuthClient
         );
 
         CapturedOrdersPayload capturedPayload = new CapturedOrdersPayload();
@@ -64,7 +70,8 @@ class OmsrMappingEventHandlerTest {
         OmsrMappingEventHandler handler = new OmsrMappingEventHandler(
                 coordinator,
                 publisher,
-                new LoadPayloadMapper(loadConfig())
+                new LoadPayloadMapper(loadConfig()),
+                mock(PlaywrightOrderScraper.class)
         );
 
         CapturedOrdersPayload capturedPayload = new CapturedOrdersPayload();
