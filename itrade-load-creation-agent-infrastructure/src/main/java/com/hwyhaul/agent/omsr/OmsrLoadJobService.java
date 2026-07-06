@@ -6,7 +6,6 @@ import com.hwyhaul.agent.agent.OmsrLoadAgentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -108,10 +107,11 @@ public class OmsrLoadJobService {
         return status(jobId);
     }
 
-    @Scheduled(
-            fixedDelayString = "${agent.omsr.job.fixed-delay-ms:300000}",
-            initialDelayString = "${agent.omsr.job.initial-delay-ms:30000}"
-    )
+    /**
+     * Entry point invoked by the Quartz trigger (see
+     * {@link com.hwyhaul.agent.config.OmsrQuartzSchedulerConfig}). Skips when the scheduled job
+     * is disabled or a prior run is still in flight.
+     */
     public void triggerScheduledLoad() {
         if (!scheduledEnabled) {
             return;
