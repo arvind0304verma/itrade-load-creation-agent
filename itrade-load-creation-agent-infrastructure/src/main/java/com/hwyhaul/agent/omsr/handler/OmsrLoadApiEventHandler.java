@@ -8,6 +8,7 @@ import com.hwyhaul.agent.omsr.OmsrLoadEvents;
 import com.hwyhaul.agent.omsr.OmsrLoadFlowCoordinator;
 import com.hwyhaul.agent.omsr.OmsrMappedLoad;
 import com.hwyhaul.agent.omsr.mongo.OmsrProcessedLoadStore;
+import com.hwyhaul.agent.intake.mongo.PipelineRunStore;
 import com.hwyhaul.agent.playwright.PlaywrightOrderScraper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
@@ -36,6 +37,7 @@ public class OmsrLoadApiEventHandler {
     private final LoadApiClient loadApiClient;
     private final ObjectMapper mapper;
     private final Optional<OmsrProcessedLoadStore> processedLoadStore;
+    private final Optional<PipelineRunStore> pipelineRunStore;
 
     @Autowired
     public OmsrLoadApiEventHandler(
@@ -44,7 +46,8 @@ public class OmsrLoadApiEventHandler {
             PlaywrightOrderScraper hwyHaulAuthClient,
             LoadApiClient loadApiClient,
             ObjectMapper mapper,
-            Optional<OmsrProcessedLoadStore> processedLoadStore
+            Optional<OmsrProcessedLoadStore> processedLoadStore,
+            Optional<PipelineRunStore> pipelineRunStore
     ) {
         this.flowCoordinator = flowCoordinator;
         this.eventPublisher = eventPublisher;
@@ -52,6 +55,18 @@ public class OmsrLoadApiEventHandler {
         this.loadApiClient = loadApiClient;
         this.mapper = mapper;
         this.processedLoadStore = processedLoadStore == null ? Optional.empty() : processedLoadStore;
+        this.pipelineRunStore = pipelineRunStore == null ? Optional.empty() : pipelineRunStore;
+    }
+
+    OmsrLoadApiEventHandler(
+            OmsrLoadFlowCoordinator flowCoordinator,
+            ApplicationEventPublisher eventPublisher,
+            PlaywrightOrderScraper hwyHaulAuthClient,
+            LoadApiClient loadApiClient,
+            ObjectMapper mapper,
+            Optional<OmsrProcessedLoadStore> processedLoadStore
+    ) {
+        this(flowCoordinator, eventPublisher, hwyHaulAuthClient, loadApiClient, mapper, processedLoadStore, Optional.empty());
     }
 
     OmsrLoadApiEventHandler(
@@ -61,7 +76,7 @@ public class OmsrLoadApiEventHandler {
             LoadApiClient loadApiClient,
             ObjectMapper mapper
     ) {
-        this(flowCoordinator, eventPublisher, hwyHaulAuthClient, loadApiClient, mapper, Optional.empty());
+        this(flowCoordinator, eventPublisher, hwyHaulAuthClient, loadApiClient, mapper, Optional.empty(), Optional.empty());
     }
 
     @Async("omsrTaskExecutor")
@@ -169,9 +184,12 @@ public class OmsrLoadApiEventHandler {
     }
 
     private String callSingleLoadApi(String runId, OmsrMappedLoad mappedLoad, String hwyHaulToken) throws Exception {
+        String customerLoadNumber = mappedLoad.externalOrderId();
+        markPipelineProcessing(customerLoadNumber);
         try {
             String response = loadApiClient.createLoads(mappedLoad.payload(), hwyHaulToken);
             markCompleted(runId, mappedLoad.externalOrderId(), response);
+            markPipelineCompleted(customerLoadNumber, response);
             log.debug("OMSR load payload for order {}: {}",
                     mappedLoad.externalOrderId(),
                     mapper.writeValueAsString(mappedLoad.payload()));
@@ -179,6 +197,7 @@ public class OmsrLoadApiEventHandler {
             return "order " + mappedLoad.externalOrderId() + ": " + response;
         } catch (Exception e) {
             markFailed(runId, mappedLoad.externalOrderId(), e);
+            markPipelineFailed(customerLoadNumber, e);
             throw e;
         }
     }
@@ -219,5 +238,17 @@ public class OmsrLoadApiEventHandler {
 
     private void markSkipped(String runId, String loadNumber, String reason) {
         processedLoadStore.ifPresent(store -> store.markSkipped(runId, loadNumber, reason));
+    }
+
+    private void markPipelineProcessing(String customerLoadNumber) {
+        pipelineRunStore.ifPresent(store -> store.markProcessing(customerLoadNumber));
+    }
+
+    private void markPipelineCompleted(String customerLoadNumber, String loadApiResponse) {
+        pipelineRunStore.ifPresent(store -> store.markCompleted(customerLoadNumber, loadApiResponse));
+    }
+
+    private void markPipelineFailed(String customerLoadNumber, Throwable error) {
+        pipelineRunStore.ifPresent(store -> store.markFailed(customerLoadNumber, error));
     }
 }
