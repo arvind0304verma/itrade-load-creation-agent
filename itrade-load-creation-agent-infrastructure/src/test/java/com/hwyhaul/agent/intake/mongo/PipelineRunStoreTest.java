@@ -23,6 +23,43 @@ class PipelineRunStoreTest {
     }
 
     @Test
+    void extractsLoadIdFromScalarDataValue() {
+        assertEquals(
+                "cf35d682-87ef-4299-8966-e70274cf5252",
+                PipelineRunStore.extractLoadId(
+                        mapper,
+                        "{\"data\":\"cf35d682-87ef-4299-8966-e70274cf5252\",\"code\":\"OK\"}"));
+    }
+
+    @Test
+    void summarizeFailReasonStripsVerboseTailsButKeepsStatusAndResponseBody() {
+        String raw = "Load API call failed with 400 Bad Request after 1234 ms. URL: https://x/create"
+                + ". Response body: {\"code\":\"BAD_REQUEST\",\"message\":\"Invalid shipper\"}"
+                + ". Null or omitted payload fields: [orders[0].shipperId]"
+                + ". Payload sent: {\"orders\":[{\"a\":1}]}"
+                + ". Verify the resolved company, shipper, address, commodity, recipient, schedule, and supplement defaults.";
+
+        assertEquals(
+                "Load API call failed with 400 Bad Request after 1234 ms. URL: https://x/create"
+                        + ". Response body: {\"code\":\"BAD_REQUEST\",\"message\":\"Invalid shipper\"}",
+                PipelineRunStore.summarizeFailReason(raw));
+    }
+
+    @Test
+    void summarizeFailReasonLeavesShortMessagesUntouched() {
+        String message = "LOAD API POST failed before request. Missing HwyHaul x-hh-token after login capture.";
+        assertEquals(message, PipelineRunStore.summarizeFailReason(message));
+    }
+
+    @Test
+    void summarizeFailReasonCapsVeryLongMessages() {
+        String message = "x".repeat(1000);
+        String summary = PipelineRunStore.summarizeFailReason(message);
+        assertEquals(501, summary.length());
+        assertEquals('…', summary.charAt(summary.length() - 1));
+    }
+
+    @Test
     void returnsNullForNonJsonOrMissingId() {
         assertNull(PipelineRunStore.extractLoadId(mapper, "created"));
         assertNull(PipelineRunStore.extractLoadId(mapper, "LOAD API POST skipped. Configure load.api.create-url."));

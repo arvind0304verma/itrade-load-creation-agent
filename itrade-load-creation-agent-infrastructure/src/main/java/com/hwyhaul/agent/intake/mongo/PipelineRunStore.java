@@ -129,6 +129,10 @@ public class PipelineRunStore {
         }
 
         JsonNode data = root.has("data") ? root.path("data") : root;
+        if (data.isValueNode()) {
+            String value = data.asText(null);
+            return value != null && !value.isBlank() && !"null".equalsIgnoreCase(value) ? value : null;
+        }
         if (data.isArray()) {
             for (JsonNode item : data) {
                 String id = idFromObject(item);
@@ -158,13 +162,48 @@ public class PipelineRunStore {
         return value == null || value.isBlank() ? null : value;
     }
 
+    private static final int MAX_FAIL_REASON_LENGTH = 500;
+
+    /**
+     * Markers that begin the verbose diagnostic tails {@link com.hwyhaul.agent.loadapi.LoadApiClient}
+     * appends to a failure message (payload dumps, omitted-field lists, boilerplate). Everything from
+     * the earliest marker onward is dropped so {@code failReason} stays a short, human-readable summary.
+     */
+    private static final String[] VERBOSE_TAIL_MARKERS = {
+            ". Null or omitted payload fields:",
+            ". Payload sent:",
+            ". Verify the resolved company"
+    };
+
     private static String failReason(Throwable error) {
         if (error == null) {
             return "Unknown load pipeline failure.";
         }
         String message = error.getMessage();
-        return message == null || message.isBlank()
-                ? error.getClass().getSimpleName()
-                : message;
+        if (message == null || message.isBlank()) {
+            return error.getClass().getSimpleName();
+        }
+        return summarizeFailReason(message);
+    }
+
+    /**
+     * Reduces a raw failure message to a concise, human-readable reason: strips the verbose
+     * diagnostic tails and caps the length. The HwyHaul HTTP status and response body, which
+     * carry the actual reason, are preserved.
+     */
+    static String summarizeFailReason(String message) {
+        String summary = message.trim();
+        int cutAt = summary.length();
+        for (String marker : VERBOSE_TAIL_MARKERS) {
+            int idx = summary.indexOf(marker);
+            if (idx >= 0 && idx < cutAt) {
+                cutAt = idx;
+            }
+        }
+        summary = summary.substring(0, cutAt).trim();
+        if (summary.length() > MAX_FAIL_REASON_LENGTH) {
+            summary = summary.substring(0, MAX_FAIL_REASON_LENGTH).trim() + "…";
+        }
+        return summary.isBlank() ? message.trim() : summary;
     }
 }
