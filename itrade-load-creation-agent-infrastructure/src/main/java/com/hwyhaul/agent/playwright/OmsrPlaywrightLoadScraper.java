@@ -58,6 +58,164 @@ public class OmsrPlaywrightLoadScraper {
     private static final String OMSR_ORDER_IFRAME_SELECTOR = "iframe#mainFrame, iframe[src*='trans_order_status' i], iframe[src*='logistics_t' i]";
     private static final String OMSR_ORDER_FRAME_URL_MARKER = "trans_order_status";
     private static final String OMSR_LOAD_DETAILS_LINK_SELECTOR = "a[href*='load_details']";
+
+    /**
+     * Collects one location-popup link per row within a stop section (Shipping/Receiving), in
+     * top-to-bottom order. With {@code action === 'count'} it returns how many stops the section
+     * lists (multiple SW/H pickups or RW/H dropoffs); with {@code action === 'click'} it clicks the
+     * link at {@code index}. Mirrors the DOM traversal used by {@code clickSectionAddressField} but
+     * keeps every row instead of just the first.
+     */
+    private static final String SECTION_ADDRESS_POPUP_LINKS_JS = """
+            async (params) => {
+              const sectionText = params.sectionText;
+              const action = params.action;
+              const index = params.index;
+              const normalize = value => (value || "").replace(/\\s+/g, " ").trim();
+              const normalizeKey = value => normalize(value).toLowerCase().replace(/[^a-z0-9]/g, "");
+              const isTextVisible = el => {
+                if (!el) return false;
+                const style = window.getComputedStyle(el);
+                if (!style || style.display === "none" || style.visibility === "hidden") {
+                  return false;
+                }
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+              };
+              const isVisible = el => {
+                if (!el) return false;
+                const style = window.getComputedStyle(el);
+                if (!style || style.display === "none" || style.visibility === "hidden" || style.pointerEvents === "none") {
+                  return false;
+                }
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+              };
+              const byPosition = (a, b) => {
+                const rectA = a.getBoundingClientRect();
+                const rectB = b.getBoundingClientRect();
+                return rectA.top - rectB.top || rectA.left - rectB.left;
+              };
+              const clickableSelector = "a, button, [role='button'], [role='link'], [onclick], [tabindex]:not([tabindex='-1']), input, select, textarea";
+              const isLocationPopupLink = anchor => {
+                if (!anchor) {
+                  return false;
+                }
+                const href = normalize(anchor.getAttribute("href") || "");
+                const onclick = normalize(anchor.getAttribute("onclick") || "");
+                return /setPopupdiv\\(/i.test(href)
+                  || /setPopupdiv\\(/i.test(onclick)
+                  || /popup_[a-z_]+\\.cfm\\?/i.test(href)
+                  || /popup_[a-z_]+\\.cfm\\?/i.test(onclick);
+              };
+              const findLink = (root, popupOnly) => {
+                if (!root) {
+                  return null;
+                }
+                const links = [];
+                if (root.matches && root.matches(clickableSelector)) {
+                  links.push(root);
+                }
+                if (root.querySelectorAll) {
+                  links.push(...Array.from(root.querySelectorAll(clickableSelector)));
+                }
+                return links
+                  .filter(isVisible)
+                  .filter(link => !popupOnly || isLocationPopupLink(link))
+                  .sort(byPosition)[0] || null;
+              };
+              const collectCandidates = (root, headingBottom) => {
+                if (!root) {
+                  return [];
+                }
+                const rowSelectors = "table tbody tr, tbody tr, tr, [role='row'], .ant-table-row";
+                const cellSelectors = "th, td, [role='cell'], .ant-table-cell";
+                const rows = Array.from(root.querySelectorAll(rowSelectors)).filter(isVisible).sort(byPosition);
+                const scopedRows = rows.filter(row => row.getBoundingClientRect().top >= headingBottom - 2);
+                const rowCandidates = scopedRows.length > 0 ? scopedRows : rows;
+                const links = [];
+                for (const row of rowCandidates) {
+                  const cells = Array.from(row.querySelectorAll(cellSelectors)).filter(isVisible);
+                  const firstCell = cells[0] || Array.from(row.children).find(isVisible) || row;
+                  // Only enumerate genuine location-popup links. Falling back to any clickable
+                  // element over-counts ordinary rows and makes single-stop loads look multi-stop,
+                  // triggering a popup-wait timeout per phantom stop.
+                  const candidate = findLink(firstCell, true);
+                  if (candidate && !links.includes(candidate)) {
+                    links.push(candidate);
+                  }
+                }
+                return links;
+              };
+
+              const target = normalize(sectionText).toLowerCase();
+              const targetKey = normalizeKey(target);
+              const labelSelectors = "h1, h2, h3, h4, h5, h6, [role='heading'], .ant-card-head-title, .ant-typography";
+              const matchesLabel = el => {
+                const text = normalize(el.innerText).toLowerCase();
+                const textKey = normalizeKey(text);
+                return text === target
+                  || text.startsWith(target + ":")
+                  || text.startsWith(target + " ")
+                  || text.startsWith(target + "-")
+                  || textKey === targetKey
+                  || textKey.startsWith(targetKey);
+              };
+              const primaryCandidates = Array.from(document.querySelectorAll(labelSelectors))
+                .filter(isTextVisible)
+                .filter(matchesLabel)
+                .sort((a, b) => normalize(a.innerText).length - normalize(b.innerText).length);
+              const labelCandidates = primaryCandidates.length > 0
+                ? primaryCandidates
+                : Array.from(document.querySelectorAll("body *"))
+                    .filter(isTextVisible)
+                    .filter(matchesLabel)
+                    .sort((a, b) => normalize(a.innerText).length - normalize(b.innerText).length);
+
+              const labelEl = labelCandidates[0];
+              if (!labelEl) {
+                return action === "count" ? 0 : false;
+              }
+
+              // Scrolling (and its settle delay) is only needed before an actual click; counting
+              // reads layout coordinates directly and must stay cheap since it runs on every load.
+              if (action === "click") {
+                labelEl.scrollIntoView({ block: "center", inline: "center" });
+                await new Promise(resolve => setTimeout(resolve, 100));
+              }
+
+              const headingBottom = labelEl.getBoundingClientRect().bottom;
+              const containers = [
+                labelEl.closest("section, article, .ant-card, .ant-card-body, .ant-collapse-item, .ant-collapse-content, [role='region'], .ant-tabs-tabpane, .ant-space, .ant-row, .ant-col"),
+                labelEl.parentElement,
+                labelEl.parentElement?.parentElement
+              ].filter(Boolean);
+
+              let candidates = [];
+              for (const container of containers) {
+                candidates = collectCandidates(container, headingBottom);
+                if (candidates.length > 0) {
+                  break;
+                }
+              }
+
+              if (action === "count") {
+                return candidates.length;
+              }
+
+              const chosen = candidates[index];
+              if (!chosen) {
+                return false;
+              }
+              chosen.scrollIntoView({ block: "center", inline: "center" });
+              try {
+                chosen.click();
+              } catch (error) {
+                chosen.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+              }
+              return true;
+            }
+            """;
     private static final String OMSR_ORDER_STATUS_FILTER_BUTTON_SELECTOR =
             "input[type='button'][name='Submit4'][value='Filter'], input[name='Submit4'], input[value='Filter'][onclick*='openlogisFilterWindow']";
     private static final String OMSR_ORDER_STATUS_ACTION_CONTROL_SELECTOR = "input[type='button'], input[type='submit'], button";
@@ -1321,10 +1479,37 @@ public class OmsrPlaywrightLoadScraper {
         load.pickup = buildStop(attributes, true);
         load.dropoff = buildStop(attributes, false);
 
-        applyPopupCapture(load.pickup, captureAddressPopup(frame, "Shipping", "SW/H", "Pickup", "Origin", "Shipper", "Ship From"), true);
-        applyPopupCapture(load.dropoff, captureAddressPopup(frame, "Receiving", "RW/H", "SW/R", "Dropoff", "Drop Off", "Delivery", "Destination", "Receiver"), false);
+        // Detect multi-stop cheaply from the section text already captured above: each pickup shows
+        // an SW/H marker and each dropoff an RW/H marker. Only when a section lists more than one do
+        // we pay for the extra DOM enumeration and location-popup round-trips. Single-stop loads (the
+        // common case) keep the original two-popup cost with no added DOM work.
+        int pickupMarkers = countMarkerOccurrences(bodyText, "SW/H");
+        int dropoffMarkers = countMarkerOccurrences(bodyText, "RW/H");
+        boolean multiStop = pickupMarkers > 1 || dropoffMarkers > 1;
+
+        List<PopupCapture> pickupCaptures;
+        List<PopupCapture> dropoffCaptures;
+        if (multiStop) {
+            pickupCaptures = captureAddressPopups(frame, "Shipping", "SW/H", "Pickup", "Origin", "Shipper", "Ship From");
+            dropoffCaptures = captureAddressPopups(frame, "Receiving", "RW/H", "SW/R", "Dropoff", "Drop Off", "Delivery", "Destination", "Receiver");
+            log.info("OMSR load {} is a multi-stop load: {} pickup marker(s) (SW/H) and {} dropoff marker(s) (RW/H) detected; captured {} pickup and {} dropoff location popup(s).",
+                    firstNonBlank(load.externalOrderId, "?"), pickupMarkers, dropoffMarkers,
+                    pickupCaptures.size(), dropoffCaptures.size());
+        } else {
+            pickupCaptures = singletonOrEmpty(captureAddressPopup(frame, "Shipping", "SW/H", "Pickup", "Origin", "Shipper", "Ship From"));
+            dropoffCaptures = singletonOrEmpty(captureAddressPopup(frame, "Receiving", "RW/H", "SW/R", "Dropoff", "Drop Off", "Delivery", "Destination", "Receiver"));
+        }
+
+        applyPopupCapture(load.pickup, firstOrNull(pickupCaptures), true);
+        applyPopupCapture(load.dropoff, firstOrNull(dropoffCaptures), false);
 
         fillAddressFromBodyText(bodyText, load);
+
+        List<CapturedOrdersPayload.RouteStop> scrapedRouteStops =
+                buildScrapedRouteStops(attributes, pickupCaptures, dropoffCaptures);
+        if (scrapedRouteStops.size() > 2) {
+            load.routeStops = scrapedRouteStops;
+        }
     }
 
     private void applyShippingTotals(
@@ -1678,6 +1863,230 @@ public class OmsrPlaywrightLoadScraper {
         }
 
         return null;
+    }
+
+    /**
+     * Captures every location popup in a stop section. When the section (Shipping/Receiving) lists
+     * more than one location link — multiple SW/H rows for pickups or RW/H rows for dropoffs — each
+     * popup is captured in order. Falls back to a single capture (the existing strategy chain) when
+     * the section exposes at most one link or the enumeration fails, so single-stop loads behave
+     * exactly as before.
+     */
+    private List<PopupCapture> captureAddressPopups(Frame frame, String... displayTexts) {
+        if (frame == null || displayTexts == null || displayTexts.length == 0) {
+            return List.of();
+        }
+
+        String sectionText = null;
+        for (String displayText : displayTexts) {
+            if (isSectionAddressTarget(displayText)) {
+                sectionText = displayText;
+                break;
+            }
+        }
+
+        if (sectionText != null) {
+            int linkCount = sectionAddressPopupLinkCount(frame, sectionText);
+            if (linkCount > 1) {
+                Page page = frame.page();
+                List<PopupCapture> captures = new ArrayList<>(linkCount);
+                for (int index = 0; index < linkCount; index++) {
+                    PopupCapture capture = captureSectionAddressPopupAt(page, frame, sectionText, index);
+                    if (capture != null) {
+                        captures.add(capture);
+                    }
+                }
+                if (!captures.isEmpty()) {
+                    return captures;
+                }
+            }
+        }
+
+        PopupCapture single = captureAddressPopup(frame, displayTexts);
+        return single == null ? List.of() : List.of(single);
+    }
+
+    private PopupCapture captureSectionAddressPopupAt(Page page, Frame sourceFrame, String sectionText, int index) {
+        if (page == null || sourceFrame == null || sectionText == null || sectionText.isBlank()) {
+            return null;
+        }
+
+        try {
+            Page popupPage = page.waitForPopup(
+                    new Page.WaitForPopupOptions().setTimeout(ADDRESS_POPUP_TIMEOUT_MS),
+                    () -> clickSectionAddressPopupLink(sourceFrame, sectionText, index));
+            if (popupPage != null) {
+                popupPage.waitForLoadState();
+                PopupCapture capture = capturePopupContent(bestEffortPopupFrame(popupPage));
+                closePopupQuietly(popupPage);
+                return capture;
+            }
+        } catch (PlaywrightException e) {
+            if (!isTimeoutError(e)) {
+                throw e;
+            }
+        }
+
+        return null;
+    }
+
+    private void closePopupQuietly(Page popupPage) {
+        if (popupPage == null) {
+            return;
+        }
+        try {
+            if (!popupPage.isClosed()) {
+                popupPage.close();
+            }
+        } catch (PlaywrightException ignored) {
+            // Best-effort cleanup so the next popup capture starts from a clean slate.
+        }
+    }
+
+    private static <T> T firstOrNull(List<T> values) {
+        return values == null || values.isEmpty() ? null : values.get(0);
+    }
+
+    private static <T> List<T> singletonOrEmpty(T value) {
+        return value == null ? List.of() : List.of(value);
+    }
+
+    /** Counts case-insensitive, non-overlapping occurrences of a stop marker (e.g. SW/H, RW/H) in text. */
+    static int countMarkerOccurrences(String text, String marker) {
+        if (text == null || text.isBlank() || marker == null || marker.isBlank()) {
+            return 0;
+        }
+        String haystack = text.toUpperCase(Locale.ROOT);
+        String needle = marker.toUpperCase(Locale.ROOT);
+        int count = 0;
+        int index = haystack.indexOf(needle);
+        while (index >= 0) {
+            count++;
+            index = haystack.indexOf(needle, index + needle.length());
+        }
+        return count;
+    }
+
+    /**
+     * Assembles multi-stop route stops from the popups captured for each section. Only produces a
+     * route when at least one side has more than one stop; single pickup/dropoff loads keep relying
+     * on {@code load.pickup}/{@code load.dropoff} and return an empty list here.
+     */
+    private List<CapturedOrdersPayload.RouteStop> buildScrapedRouteStops(
+            Map<String, String> attributes,
+            List<PopupCapture> pickupCaptures,
+            List<PopupCapture> dropoffCaptures
+    ) {
+        int pickupCount = pickupCaptures == null ? 0 : pickupCaptures.size();
+        int dropoffCount = dropoffCaptures == null ? 0 : dropoffCaptures.size();
+        if (pickupCount <= 1 && dropoffCount <= 1) {
+            return List.of();
+        }
+
+        List<CapturedOrdersPayload.Stop> pickups = stopsFromCaptures(attributes, pickupCaptures, true);
+        List<CapturedOrdersPayload.Stop> dropoffs = stopsFromCaptures(attributes, dropoffCaptures, false);
+        return assembleRouteStops(pickups, dropoffs);
+    }
+
+    private List<CapturedOrdersPayload.Stop> stopsFromCaptures(
+            Map<String, String> attributes,
+            List<PopupCapture> captures,
+            boolean pickup
+    ) {
+        if (captures == null || captures.isEmpty()) {
+            return List.of();
+        }
+
+        List<CapturedOrdersPayload.Stop> stops = new ArrayList<>(captures.size());
+        for (int index = 0; index < captures.size(); index++) {
+            // Only the first stop on each side can inherit the section's summary attributes; the
+            // remaining stops are described solely by their own location popup.
+            CapturedOrdersPayload.Stop stop = index == 0
+                    ? buildStop(attributes, pickup)
+                    : new CapturedOrdersPayload.Stop();
+            applyPopupCapture(stop, captures.get(index), pickup);
+            stops.add(stop);
+        }
+        return stops;
+    }
+
+    static List<CapturedOrdersPayload.RouteStop> assembleRouteStops(
+            List<CapturedOrdersPayload.Stop> pickups,
+            List<CapturedOrdersPayload.Stop> dropoffs
+    ) {
+        List<CapturedOrdersPayload.RouteStop> routeStops = new ArrayList<>();
+        int sequence = 1;
+        if (pickups != null) {
+            for (CapturedOrdersPayload.Stop pickup : pickups) {
+                routeStops.add(toRouteStop(pickup, true, sequence++));
+            }
+        }
+        if (dropoffs != null) {
+            for (CapturedOrdersPayload.Stop dropoff : dropoffs) {
+                routeStops.add(toRouteStop(dropoff, false, sequence++));
+            }
+        }
+        return routeStops;
+    }
+
+    private static CapturedOrdersPayload.RouteStop toRouteStop(
+            CapturedOrdersPayload.Stop stop,
+            boolean pickup,
+            int sequence
+    ) {
+        CapturedOrdersPayload.RouteStop routeStop = new CapturedOrdersPayload.RouteStop();
+        if (stop != null) {
+            routeStop.addressId = stop.addressId;
+            routeStop.location = stop.location;
+            routeStop.streetAddress = stop.streetAddress;
+            routeStop.city = stop.city;
+            routeStop.state = stop.state;
+            routeStop.zip = stop.zip;
+            routeStop.dateTime = stop.dateTime;
+        }
+        routeStop.sequenceType = pickup ? "PICK" : "DROP";
+        routeStop.orderSequenceNumber = sequence;
+        if (pickup) {
+            routeStop.earliestPickupDateTime = routeStop.dateTime;
+        } else {
+            routeStop.earliestDropoffDateTime = routeStop.dateTime;
+        }
+        return routeStop;
+    }
+
+    private int sectionAddressPopupLinkCount(Frame frame, String sectionText) {
+        if (frame == null || sectionText == null || sectionText.isBlank()) {
+            return 0;
+        }
+
+        try {
+            Object value = frame.evaluate(
+                    SECTION_ADDRESS_POPUP_LINKS_JS,
+                    Map.of("sectionText", sectionText, "action", "count", "index", 0));
+            if (value instanceof Number number) {
+                return Math.max(0, number.intValue());
+            }
+        } catch (PlaywrightException e) {
+            if (!isTransientNavigationError(e)) {
+                throw e;
+            }
+        }
+        return 0;
+    }
+
+    private void clickSectionAddressPopupLink(Frame frame, String sectionText, int index) {
+        try {
+            Object clicked = frame.evaluate(
+                    SECTION_ADDRESS_POPUP_LINKS_JS,
+                    Map.of("sectionText", sectionText, "action", "click", "index", index));
+            if (!Boolean.TRUE.equals(clicked)) {
+                log.debug("OMSR section address field {} occurrence {} could not be located.", sectionText, index);
+            }
+        } catch (PlaywrightException e) {
+            if (!isTransientNavigationError(e)) {
+                throw e;
+            }
+        }
     }
 
     private PopupCapture captureAddressPopup(Page page, Frame sourceFrame, String displayText) {
@@ -4021,7 +4430,13 @@ public class OmsrPlaywrightLoadScraper {
                     textByKey(root, "shipperId"),
                     load.shipperId);
             JsonNode waypoints = root.path("waypoints");
-            load.routeStops = routeStopsFromOrderDetailResponse(waypoints);
+            List<CapturedOrdersPayload.RouteStop> apiRouteStops = routeStopsFromOrderDetailResponse(waypoints);
+            // Prefer the authoritative order-detail waypoints, but keep any multi-stop route
+            // already assembled from the scraped Shipping (SW/H) / Receiving (RW/H) sections
+            // when the API response carries no waypoints.
+            if (!apiRouteStops.isEmpty()) {
+                load.routeStops = apiRouteStops;
+            }
             backfillPoNumbersFromRouteStops(load);
             if (waypoints.isArray()) {
                 for (JsonNode waypoint : waypoints) {

@@ -777,6 +777,77 @@ class OmsrPlaywrightLoadScraperTest {
         assertEquals(new LinkedHashSet<>(List.of("22853714", "22853715", "22853716", "22853717")), seenLoadNumbers);
     }
 
+    @Test
+    void countMarkerOccurrencesCountsSectionMarkersCaseInsensitively() {
+        String multiPickup = """
+                Shipping
+                SW/H
+                Chicago, IL
+                SW/H
+                Detroit, MI
+                Receiving
+                RW/H
+                Dallas, TX
+                """;
+
+        assertEquals(2, OmsrPlaywrightLoadScraper.countMarkerOccurrences(multiPickup, "SW/H"));
+        assertEquals(1, OmsrPlaywrightLoadScraper.countMarkerOccurrences(multiPickup, "RW/H"));
+        assertEquals(2, OmsrPlaywrightLoadScraper.countMarkerOccurrences(multiPickup, "sw/h"));
+        assertEquals(0, OmsrPlaywrightLoadScraper.countMarkerOccurrences("", "SW/H"));
+        assertEquals(0, OmsrPlaywrightLoadScraper.countMarkerOccurrences(null, "SW/H"));
+    }
+
+    @Test
+    void assembleRouteStopsOrdersAllPickupsThenAllDropoffsWithSequentialNumbers() {
+        CapturedOrdersPayload.Stop pickup1 = stop("addr-1", "Chicago", "IL", "60601", "2026-07-01T08:00");
+        CapturedOrdersPayload.Stop pickup2 = stop("addr-2", "Detroit", "MI", "48201", "2026-07-01T12:00");
+        CapturedOrdersPayload.Stop dropoff = stop("addr-3", "Dallas", "TX", "75201", "2026-07-03T09:00");
+
+        List<CapturedOrdersPayload.RouteStop> routeStops =
+                OmsrPlaywrightLoadScraper.assembleRouteStops(List.of(pickup1, pickup2), List.of(dropoff));
+
+        assertEquals(3, routeStops.size());
+
+        assertEquals("PICK", routeStops.get(0).sequenceType);
+        assertEquals(Integer.valueOf(1), routeStops.get(0).orderSequenceNumber);
+        assertEquals("Chicago", routeStops.get(0).city);
+        assertEquals("2026-07-01T08:00", routeStops.get(0).earliestPickupDateTime);
+        assertNull(routeStops.get(0).earliestDropoffDateTime);
+
+        assertEquals("PICK", routeStops.get(1).sequenceType);
+        assertEquals(Integer.valueOf(2), routeStops.get(1).orderSequenceNumber);
+        assertEquals("Detroit", routeStops.get(1).city);
+
+        assertEquals("DROP", routeStops.get(2).sequenceType);
+        assertEquals(Integer.valueOf(3), routeStops.get(2).orderSequenceNumber);
+        assertEquals("Dallas", routeStops.get(2).city);
+        assertEquals("2026-07-03T09:00", routeStops.get(2).earliestDropoffDateTime);
+        assertNull(routeStops.get(2).earliestPickupDateTime);
+    }
+
+    @Test
+    void assembleRouteStopsHandlesSingleDropoffAfterMultiplePickups() {
+        List<CapturedOrdersPayload.RouteStop> routeStops = OmsrPlaywrightLoadScraper.assembleRouteStops(
+                List.of(stop("p1", "Fresno", "CA", "93721", null)),
+                List.of(stop("d1", "Reno", "NV", "89501", null), stop("d2", "Boise", "ID", "83702", null)));
+
+        assertEquals(3, routeStops.size());
+        assertEquals("PICK", routeStops.get(0).sequenceType);
+        assertEquals("DROP", routeStops.get(1).sequenceType);
+        assertEquals("DROP", routeStops.get(2).sequenceType);
+        assertEquals(Integer.valueOf(3), routeStops.get(2).orderSequenceNumber);
+    }
+
+    private CapturedOrdersPayload.Stop stop(String addressId, String city, String state, String zip, String dateTime) {
+        CapturedOrdersPayload.Stop stop = new CapturedOrdersPayload.Stop();
+        stop.addressId = addressId;
+        stop.city = city;
+        stop.state = state;
+        stop.zip = zip;
+        stop.dateTime = dateTime;
+        return stop;
+    }
+
     private Locator invokeFindLoadRow(
             OmsrPlaywrightLoadScraper scraper,
             Frame frame,
